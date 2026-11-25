@@ -103,7 +103,7 @@ public class TransactionService {
             BankTransaction saved = transactionRepository.save(transaction);
 
             loggingService.logSuccess(
-                    request.getIdempotencyKey(),
+                    saved.getTransactionId(),
                     "DEPOSIT",
                     (System.nanoTime() - startTime) / 1_000_000
             );
@@ -152,7 +152,7 @@ public class TransactionService {
             BankTransaction saved = transactionRepository.save(transaction);
 
             loggingService.logSuccess(
-                    request.getIdempotencyKey(),
+                    saved.getTransactionId(),
                     "WITHDRAWAL",
                     (System.nanoTime() - startTime) / 1_000_000
             );
@@ -231,7 +231,7 @@ public class TransactionService {
             BankTransaction saved = transactionRepository.save(transaction);
 
             loggingService.logSuccess(
-                    request.getIdempotencyKey(),
+                    saved.getTransactionId(),
                     "TRANSFER",
                     (System.nanoTime() - startTime) / 1_000_000
             );
