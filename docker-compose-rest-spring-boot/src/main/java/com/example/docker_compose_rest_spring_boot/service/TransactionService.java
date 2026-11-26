@@ -46,6 +46,12 @@ public class TransactionService {
         }
     }
 
+    private void validateAccountNumber(String accountNumber) {
+        if (accountNumber == null || accountNumber.isBlank()) {
+            throw new IllegalArgumentException("Account number is required");
+        }
+    }
+
     private Account getLockedActiveAccount(String accountNumber) {
         Account account = accountRepository
                 .findByAccountNumberWithLock(accountNumber)
@@ -82,6 +88,9 @@ public class TransactionService {
         long startTime = System.nanoTime();
 
         try {
+            if (request == null) {
+                throw new IllegalArgumentException("Request body is required");
+            }
             validateAmount(request.getAmount());
             validateIdempotencyKey(request.getIdempotencyKey());
 
@@ -100,7 +109,7 @@ public class TransactionService {
             transaction.setStatus("SUCCESS");
             transaction.setIdempotencyKey(request.getIdempotencyKey());
 
-            BankTransaction saved = transactionRepository.save(transaction);
+            BankTransaction saved = transactionRepository.saveAndFlush(transaction);
 
             loggingService.logSuccess(
                     saved.getTransactionId(),
@@ -126,6 +135,9 @@ public class TransactionService {
         long startTime = System.nanoTime();
 
         try {
+            if (request == null) {
+                throw new IllegalArgumentException("Request body is required");
+            }
             validateAmount(request.getAmount());
             validateIdempotencyKey(request.getIdempotencyKey());
 
@@ -149,7 +161,7 @@ public class TransactionService {
             transaction.setStatus("SUCCESS");
             transaction.setIdempotencyKey(request.getIdempotencyKey());
 
-            BankTransaction saved = transactionRepository.save(transaction);
+            BankTransaction saved = transactionRepository.saveAndFlush(transaction);
 
             loggingService.logSuccess(
                     saved.getTransactionId(),
@@ -175,7 +187,12 @@ public class TransactionService {
         long startTime = System.nanoTime();
 
         try {
+            if (request == null) {
+                throw new IllegalArgumentException("Request body is required");
+            }
             validateAmount(request.getAmount());
+            validateAccountNumber(request.getSourceAccountNumber());
+            validateAccountNumber(request.getDestinationAccountNumber());
             validateIdempotencyKey(request.getIdempotencyKey());
 
             if (request.getSourceAccountNumber()
@@ -228,7 +245,7 @@ public class TransactionService {
             transaction.setStatus("SUCCESS");
             transaction.setIdempotencyKey(request.getIdempotencyKey());
 
-            BankTransaction saved = transactionRepository.save(transaction);
+            BankTransaction saved = transactionRepository.saveAndFlush(transaction);
 
             loggingService.logSuccess(
                     saved.getTransactionId(),
