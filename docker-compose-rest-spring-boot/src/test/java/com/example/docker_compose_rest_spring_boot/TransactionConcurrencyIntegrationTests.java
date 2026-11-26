@@ -1,5 +1,9 @@
 package com.example.docker_compose_rest_spring_boot;
+import com.example.docker_compose_rest_spring_boot.dto.WithdrawRequest;
+import com.example.docker_compose_rest_spring_boot.exception.InsufficientBalanceException;
+import com.example.docker_compose_rest_spring_boot.repository.FailedTransactionRepository;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.example.docker_compose_rest_spring_boot.dto.DepositRequest;
 import com.example.docker_compose_rest_spring_boot.entity.Account;
 import com.example.docker_compose_rest_spring_boot.entity.Customer;
@@ -24,6 +28,8 @@ class TransactionConcurrencyIntegrationTests {
 
     @Autowired
     private TransactionService transactionService;
+    @Autowired
+    private FailedTransactionRepository failedTransactionRepository;
 
     @Autowired
     private CustomerRepository customerRepository;
@@ -132,4 +138,129 @@ class TransactionConcurrencyIntegrationTests {
             }
         }
     }
+    @Test
+void shouldPreventNegativeBalanceDuringConcurrentWithdrawals() throws Exception {
+
+    Customer customer = null;
+    Account account = null;
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+
+    long failedBefore = failedTransactionRepository.count();
+
+    try {
+        customer = new Customer();
+        customer.setName("Withdrawal Race Test");
+        customer.setEmail("withdraw_" + System.nanoTime() + "@test.com");
+        customer.setPhone(String.valueOf(System.nanoTime()).substring(0, 10));
+        customer = customerRepository.saveAndFlush(customer);
+
+        account = new Account();
+        account.setAccountNumber("WITH" + System.nanoTime());
+        account.setBalance(new BigDecimal("10000.00"));
+        account.setStatus("ACTIVE");
+        account.setCustomer(customer);
+        account = accountRepository.saveAndFlush(account);
+
+        final String accountNumber = account.getAccountNumber();
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<Future<Boolean>> futures = new java.util.ArrayList<>();
+
+        String[] keys = {
+            "WITHDRAW-5000-" + System.nanoTime(),
+            "WITHDRAW-7000-" + System.nanoTime()
+        };
+
+        String[] amounts = {"5000.00", "7000.00"};
+
+        for (int i = 0; i < 2; i++) {
+            final int index = i;
+
+            futures.add(executor.submit(() -> {
+                ready.countDown();
+                start.await();
+
+                WithdrawRequest request = new WithdrawRequest();
+                request.setAccountNumber(accountNumber);
+                request.setAmount(new BigDecimal(amounts[index]));
+                request.setIdempotencyKey(keys[index]);
+
+                try {
+                    transactionService.withdraw(request);
+                    return true;
+                } catch (InsufficientBalanceException exception) {
+                    return false;
+                }
+            }));
+        }
+
+        assertTrue(ready.await(30, TimeUnit.SECONDS));
+
+        start.countDown();
+
+        int successful = 0;
+        int rejected = 0;
+
+        for (Future<Boolean> future : futures) {
+            if (future.get(60, TimeUnit.SECONDS)) {
+                successful++;
+            } else {
+                rejected++;
+            }
+        }
+
+        Account updated = accountRepository
+            .findById(account.getAccountId())
+            .orElseThrow();
+
+        BigDecimal balance = updated.getBalance();
+
+        assertEquals(1, successful);
+        assertEquals(1, rejected);
+
+        assertTrue(
+            balance.compareTo(BigDecimal.ZERO) >= 0,
+            "Account balance must never become negative"
+        );
+
+        assertTrue(
+            balance.compareTo(new BigDecimal("5000.00")) == 0 ||
+            balance.compareTo(new BigDecimal("3000.00")) == 0,
+            "Unexpected final account balance: " + balance
+        );
+
+        assertEquals(
+            failedBefore + 1,
+            failedTransactionRepository.count(),
+            "Failed withdrawal must be recorded in failed_transaction"
+        );
+
+        System.out.println("WITHDRAWAL CONCURRENCY TEST PASSED");
+        System.out.println("Successful withdrawals: " + successful);
+        System.out.println("Rejected withdrawals: " + rejected);
+        System.out.println("Final balance: " + balance);
+
+    } finally {
+        executor.shutdownNow();
+
+        if (account != null) {
+            List<BankTransaction> transactions =
+                transactionRepository
+                    .findBySourceAccountAccountIdOrDestinationAccountAccountId(
+                        account.getAccountId(),
+                        account.getAccountId()
+                    );
+
+            transactionRepository.deleteAll(transactions);
+            accountRepository.delete(account);
+        }
+
+        if (customer != null) {
+            customerRepository.delete(customer);
+        }
+    }
+}
 }
