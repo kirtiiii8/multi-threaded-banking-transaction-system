@@ -18,6 +18,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -109,8 +111,12 @@ class TransactionServiceTests {
 
         assertEquals(new BigDecimal("1000.00"), account.getBalance());
         verify(loggingService).logFailure(
-                eq("WITHDRAWAL"), eq("withdraw-002"),
-                anyLong(), any(RuntimeException.class));
+        eq("WITHDRAWAL"),
+        eq("withdraw-002"),
+        eq(new BigDecimal("5000.00")),
+        anyLong(),
+        any(RuntimeException.class)
+);
         verify(transactionRepository, never())
                 .saveAndFlush(any(BankTransaction.class));
     }
